@@ -5,7 +5,7 @@ import sys
 import math
 import re
 import numpy as np
-from sklearn import linear_model, svm
+from sklearn import linear_model, svm, preprocessing
 from math import log
 
 from common import\
@@ -38,7 +38,7 @@ def pointwise_train_features(train_data_file, train_rel_file):
       if key in idfDict:
         queryVector[key] = queryVector[key] * idfDict[key]
       else:
-        queryVector[key] =  queryVector[key] * log(98998)
+        queryVector[key] =  queryVector[key] * 98998
 
 
     results = queries[query]
@@ -59,7 +59,7 @@ def pointwise_train_features(train_data_file, train_rel_file):
 
   return (X, Y)
  
-def pointwise_test_features(test_data_file):
+def pointwise_test_features(test_data_file, is_pairwise=False):
   (queries, features) = extractFeatures(test_data_file)
 
   # Bulid IDF dictionary
@@ -82,7 +82,7 @@ def pointwise_test_features(test_data_file):
       if key in idfDict:
         queryVector[key] = queryVector[key] * idfDict[key]
       else:
-        queryVector[key] = queryVector[key] * log(98998)
+        queryVector[key] = queryVector[key] * 98998
 
 
     results = queries[query]
@@ -110,6 +110,8 @@ def pointwise_test_features(test_data_file):
         index_map[query] = {}
         index_map[query][document] = len(X) - 1
 
+  X = preprocessing.scale(X)
+
   return (X, queryStrings, index_map)
  
 def pointwise_learning(X, y):
@@ -130,28 +132,95 @@ def pointwise_testing(X, model):
 ##### Pair-wise approach #####
 ##############################
 def pairwise_train_features(train_data_file, train_rel_file):
-  X = [[0, 0], [1, 1], [2, 2]]
-  y = [0, 1, 2]
-  return (X, y)
+  (queries, features) = extractFeatures(train_data_file)
+
+  # Bulid IDF dictionary
+  idfDict = getIDFScores()
+
+  trainScores = getTrainScores(train_rel_file)
+
+  X = []
+  Y = []
+
+  # Associates each query/doc pair with an index into the scaled feature matrix
+  featureIndex = {}
+  featuresBeforeScaling = []
+
+  for query in queries.keys():
+    featureIndex[query] = {} 
+    queryTerms = query.rsplit()
+    queryVector = collections.defaultdict(lambda: 0)
+
+    for queryTerm in queryTerms:
+      queryTerm = queryTerm.lower()
+      queryVector[queryTerm] = queryVector[queryTerm] + 1
+
+    for key in queryVector:
+      if key in idfDict:
+        queryVector[key] = queryVector[key] * idfDict[key]
+      else:
+        queryVector[key] =  queryVector[key] * log(98998)
+
+
+    results = queries[query]
+    for d, document in enumerate(results):
+      featuresBeforeScaling_i = [] 
+      # extract raw counts and apply sublinear scaling
+      rawCounts = getRawCounts(queries, features, query, document)
+      normalizedBodyLength = features[query][document]['body_length'] + 500
+
+      for j in range(len(rawCounts)):
+        currentCounts = rawCounts[j]
+        currentValue = 0
+        for term in queryVector:
+          currentValue += queryVector[term] * currentCounts[term]
+        featuresBeforeScaling_i.append(currentValue)
+      featuresBeforeScaling.append(featuresBeforeScaling_i)
+      featureIndex[query][document] = len(featuresBeforeScaling) - 1
+
+
+  features = preprocessing.scale(featuresBeforeScaling)
+
+  for query in queries.keys():
+    results = queries[query]
+    for d1, document1 in enumerate(results):
+      X_d1 = features[featureIndex[query][document1]]
+
+      for d2, document2 in enumerate(results[d1+1:]):
+        X_d2 = features[featureIndex[query][document2]]
+        
+        d1Score = trainScores[query][document1]
+        d2Score = trainScores[query][document2]
+
+        if d1Score != d2Score:
+          if d1Score > d2Score:
+            val = 1
+          else:
+            val = -1
+          X_i = [x1 - x2 for x1, x2 in zip(X_d1, X_d2)]
+          X.append(X_i)
+          Y.append(val)
+
+  return (X, Y)
+
 
 def pairwise_test_features(test_data_file):
-  # stub, you need to implement
-  X = [[0.5, 0.5], [1.5, 1.5]]  
-  queries = ['query1', 'query2']
-  # index_map[query][url] = i means X[i] is the feature vector of query and url
-  index_map = {'query1' : {'url1':0}, 'query2': {'url2':1}}
+  # Making vectors for test file is same as in pointwise computation
+  return pointwise_test_features(test_data_file, True)
 
-  return (X, queries, index_map)
 
 def pairwise_learning(X, y):
-  # stub, you need to implement
   model = svm.SVC(kernel='linear', C=1.0)
+  model.fit(X, y)
   return model
 
 def pairwise_testing(X, model):
-  # stub, you need to implement
-  y = [0.5, 1.5]
-  return y
+  weights = model.coef_[0]
+  Y = []
+  for X_i in X:
+    Y.append(np.dot(X_i, weights))
+  return Y
+
 
 ####################
 ##### Training #####
