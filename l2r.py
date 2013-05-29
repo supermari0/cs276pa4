@@ -6,34 +6,124 @@ import math
 import re
 import numpy as np
 from sklearn import linear_model, svm
+from math import log
+
+from common import\
+extractFeatures,getRawCounts,printRankedResults,getIDFScores,getTrainScores
+import collections
 
 ###############################
 ##### Point-wise approach #####
 ###############################
 def pointwise_train_features(train_data_file, train_rel_file):
-  # stub, you need to implement
-  X = [[0, 0], [1, 1], [2, 2]]
-  y = [0, 1, 2]
-  return (X, y)
+  (queries, features) = extractFeatures(train_data_file)
+
+  # Bulid IDF dictionary
+  idfDict = getIDFScores()
+
+  trainScores = getTrainScores(train_rel_file)
+
+  X = []
+  Y = []
+
+  for query in queries.keys():
+    queryTerms = query.rsplit()
+    queryVector = collections.defaultdict(lambda: 0)
+
+    for queryTerm in queryTerms:
+      queryTerm = queryTerm.lower()
+      queryVector[queryTerm] = queryVector[queryTerm] + 1
+
+    for key in queryVector:
+      if key in idfDict:
+        queryVector[key] = queryVector[key] * idfDict[key]
+      else:
+        queryVector[key] =  queryVector[key] * log(98998)
+
+
+    results = queries[query]
+    for d, document in enumerate(results):
+      X_i = [] 
+      # extract raw counts and apply sublinear scaling
+      rawCounts = getRawCounts(queries, features, query, document)
+      normalizedBodyLength = features[query][document]['body_length'] + 500
+
+      for j in range(len(rawCounts)):
+        currentCounts = rawCounts[j]
+        currentValue = 0
+        for term in queryVector:
+          currentValue += queryVector[term] * currentCounts[term]
+        X_i.append(currentValue)
+      X.append(X_i)
+      Y.append(trainScores[query][document])
+
+  return (X, Y)
  
 def pointwise_test_features(test_data_file):
-  # stub, you need to implement
-  X = [[0.5, 0.5], [1.5, 1.5]]  
-  queries = ['query1', 'query2']
-  
-  # index_map[query][url] = i means X[i] is the feature vector of query and url
-  index_map = {'query1' : {'url1':0}, 'query2': {'url2':1}}
+  (queries, features) = extractFeatures(test_data_file)
 
-  return (X, queries, index_map)
+  # Bulid IDF dictionary
+  idfDict = getIDFScores()
+
+  queryStrings = []
+  X = []
+  index_map = {}
+
+  for query in queries.keys():
+    queryStrings.append(query)
+    queryTerms = query.rsplit()
+    queryVector = collections.defaultdict(lambda: 0)
+
+    for queryTerm in queryTerms:
+      queryTerm = queryTerm.lower()
+      queryVector[queryTerm] = queryVector[queryTerm] + 1
+
+    for key in queryVector:
+      if key in idfDict:
+        queryVector[key] = queryVector[key] * idfDict[key]
+      else:
+        queryVector[key] = queryVector[key] * log(98998)
+
+
+    results = queries[query]
+    for d, document in enumerate(results):
+      X_i = [] 
+      rawCounts = getRawCounts(queries, features, query, document)
+      if 'body_length' in features[query][document]:
+        normalizedBodyLength = features[query][document]['body_length'] + 500
+      else:
+        normalizedBodyLength = 500
+
+      for j in range(len(rawCounts)):
+        currentCounts = rawCounts[j]
+        currentValue = 0
+        for term in queryVector:
+          currentValue += queryVector[term] * currentCounts[term]
+        X_i.append(currentValue)
+
+      X.append(X_i)
+
+      if query in index_map:
+        # index_map[query][url] = i means X[i] is the feature vector of query and url
+        index_map[query][document] = len(X) - 1
+      else:
+        index_map[query] = {}
+        index_map[query][document] = len(X) - 1
+
+  return (X, queryStrings, index_map)
  
 def pointwise_learning(X, y):
-  # stub, you need to implement
   model = linear_model.LinearRegression()
+  model.fit(X, y)
   return model
 
 def pointwise_testing(X, model):
-  # stub, you need to implement
-  y = [0.5, 1.5]
+  y = []
+
+  # Get weight vector
+  for x_i in X:
+    y.append(model.predict(x_i))
+
   return y
 
 ##############################
@@ -72,10 +162,8 @@ def train(train_data_file, train_rel_file, task):
   if task == 1:
     # Step (1): construct your feature and label arrays here
     (X, y) = pointwise_train_features(train_data_file, train_rel_file)
-    # TODO1
     
     # Step (2): implement your learning algorithm here
-    # TODO2
     model = pointwise_learning(X, y)
   elif task == 2:
     # Step (1): construct your feature and label arrays here
@@ -135,12 +223,16 @@ def test(test_data_file, model, task):
     X = [[0.5, 0.5], [1.5, 1.5]]  
     y = model.predict(X)
   
+  rankedQueries = {}
+
   # some debug output
   for query in queries:
+    rankedQueries[query] = []
     for url in index_map[query]:
-      print >> sys.stderr, "Query:", query, ", url:", url, ", value:", y[index_map[query][url]]
-
-  # Step (3): output your ranking result to stdout in the format that will be scored by the ndcg.py code
+      rankedQueries[query].append((url, y[index_map[query][url]]))
+    rankedQueries[query] = [pair[0] for pair in sorted(rankedQueries[query],
+      key = lambda x: x[1], reverse = True)] 
+  printRankedResults(rankedQueries)
 
 if __name__ == '__main__':
   sys.stderr.write('# Input arguments: %s\n' % str(sys.argv))

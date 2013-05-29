@@ -120,3 +120,23 @@ def printRankedResults(queries):
       for res in queries[query]:
         print("  url: " + res)
 
+def getIDFScores():
+  with open('idf_dict', 'rb') as f:
+    idf_dict = marshal.load(f)
+  return idf_dict
+
+def getTrainScores(train_rel_file):
+  with open(train_rel_file, 'r') as f:
+    trainScores = {}
+    currentQuery = ''
+    for line in f:
+      strippedLine = line.strip('\n')
+      strippedLine = strippedLine.split(': ',1)
+      if strippedLine[0] == 'query':
+        currentQuery = strippedLine[1]
+        trainScores[currentQuery] = {}
+      else:
+        strippedLine = strippedLine[1].split()
+        currentDoc = strippedLine[0]
+        trainScores[currentQuery][currentDoc] = float(strippedLine[1])
+  return trainScores
