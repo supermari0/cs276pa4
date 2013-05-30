@@ -19,7 +19,7 @@ def pointwise_train_features(train_data_file, train_rel_file):
   (queries, features) = extractFeatures(train_data_file)
 
   # Bulid IDF dictionary
-  idfDict = getIDFScores()
+  idfDict = getIDFScores(log = True)
 
   trainScores = getTrainScores(train_rel_file)
 
@@ -38,7 +38,7 @@ def pointwise_train_features(train_data_file, train_rel_file):
       if key in idfDict:
         queryVector[key] = queryVector[key] * idfDict[key]
       else:
-        queryVector[key] =  queryVector[key] * 98998
+        queryVector[key] =  queryVector[key] * log(98998)
 
 
     results = queries[query]
@@ -82,7 +82,7 @@ def pointwise_test_features(test_data_file, is_pairwise=False):
       if key in idfDict:
         queryVector[key] = queryVector[key] * idfDict[key]
       else:
-        queryVector[key] = queryVector[key] * 98998
+        queryVector[key] = queryVector[key] * log(98998)
 
 
     results = queries[query]
@@ -110,7 +110,8 @@ def pointwise_test_features(test_data_file, is_pairwise=False):
         index_map[query] = {}
         index_map[query][document] = len(X) - 1
 
-  X = preprocessing.scale(X)
+  if is_pairwise:
+    X = preprocessing.scale(X)
 
   return (X, queryStrings, index_map)
  

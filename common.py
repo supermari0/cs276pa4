@@ -120,9 +120,13 @@ def printRankedResults(queries):
       for res in queries[query]:
         print("  url: " + res)
 
-def getIDFScores():
-  with open('idf_dict', 'rb') as f:
-    idf_dict = marshal.load(f)
+def getIDFScores(log = False):
+  if log:
+    with open('idf_dict_log', 'rb') as f:
+      idf_dict = marshal.load(f)
+  else:
+    with open('idf_dict', 'rb') as f:
+      idf_dict = marshal.load(f)
   return idf_dict
 
 def getTrainScores(train_rel_file):
